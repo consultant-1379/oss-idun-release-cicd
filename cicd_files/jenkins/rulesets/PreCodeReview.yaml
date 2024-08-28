@@ -1,0 +1,29 @@
+modelVersion: 2.0
+
+description: "Thunderbee: Rules for running pre code review on the OSS IDUN CICD repo"
+
+docker-images:
+  - python3: armdocker.rnd.ericsson.se/proj-eric-oss-dev-test/oss-idun-cicd-cli_python_precode:latest
+
+env:
+  - PWD
+  - WORKSPACE
+  - CHANGED_PYTHON_FILES
+
+rules:
+  run-python-unit-tests:
+    - task: python-unit-tests
+      docker-image: python3
+      cmd: coverage run --source idun_cicd_cli -m pytest -v --color=yes
+    - task: python-coverage-report
+      docker-image: python3
+      cmd: coverage report
+
+  run-python-linting:
+    - task: run-pylint
+      docker-image: python3
+      cmd: pylint --persistent=no --output-format=colorized --score=y ${env.CHANGED_PYTHON_FILES}
+    - task: run-flake8
+      docker-image: python3
+      cmd: pip install flake8-colors
+      cmd: flake8 ${env.CHANGED_PYTHON_FILES}

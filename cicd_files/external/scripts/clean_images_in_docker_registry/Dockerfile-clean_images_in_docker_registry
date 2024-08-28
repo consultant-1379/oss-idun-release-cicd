@@ -1,0 +1,22 @@
+FROM armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/python:3.8-slim-buster
+
+WORKDIR /usr/src/app
+
+COPY . /usr/src/app
+
+RUN pip install urllib3==1.26.4
+RUN pip install requests==2.25.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl https://baltocdn.com/helm/signing.asc | apt-key add - \
+    && echo "deb https://baltocdn.com/helm/stable/debian/ all main" > /etc/apt/sources.list.d/helm-stable-debian.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends helm \
+    && rm -rf /var/lib/apt/lists/*
+
+ENTRYPOINT ["python", "cicd_files/external/scripts/clean_images_in_docker_registry/clean_images_in_docker_registry.py"]

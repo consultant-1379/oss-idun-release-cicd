@@ -1,0 +1,12 @@
+FROM armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/python:3.8-slim-buster
+
+WORKDIR /usr/src/app
+
+COPY . /usr/src/app
+
+RUN pip install pyyaml
+RUN pip install requests
+
+ENTRYPOINT ["python", "cicd_files/external/scripts/copy_eic_site_values_to_ost/copy_eic_site_values_to_ost.py"]
+
+CMD ["FILENAME.TYPE", "BUCKET", "USER", "PASSWORD"]

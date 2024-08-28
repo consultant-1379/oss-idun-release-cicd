@@ -1,0 +1,107 @@
+modelVersion: 2.0
+
+description: "Thunderbee: Rules for releasing the OSS IDUN CICD repo"
+
+docker-images:
+  - bump-version: armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/treeder/bump:1.2.11
+
+properties:
+  - oss-idun-cicd-cli-docker-file-path: ./Dockerfile
+  - oss-idun-cicd-cli-version-file-path: ./VERSION
+  - oss-idun-cicd-cli-image-name: oss-idun-cicd-cli
+  - python-precode-docker-file-path: ./python3_pre_code_review/Dockerfile
+  - python-precode-version-file-path: ./python3_pre_code_review/VERSION
+  - python-precode-image-name: oss-idun-cicd-cli_python_precode
+  - armdocker-repo-new-path: armdocker.rnd.ericsson.se/proj-eric-oss-dev-test/
+  - tmp-bump-version-path: scripts/bump-version.sh
+
+var:
+  - docker-image-id
+  - docker-file-path
+  - version-file-path
+  - image-name
+  - armdocker-repo-new
+
+env:
+  - PWD
+  - WORKSPACE
+  - IMAGE_VERSION
+  - GERRIT_CENTRAL
+
+rules:
+  bump-service-version:
+    - task: bump-version-file
+      docker-image: bump-version
+      docker-flags:
+        - "--workdir /app"
+      docker-mounts:
+        - "${env.PWD}:/app"
+      cmd: --filename ${var.version-file-path} patch
+    - task: expose-version
+      cmd: cat "${var.version-file-path}" > ${env.WORKSPACE}/artifact.properties
+
+  tmp-expose-bumped-version:
+    - task: expose-version
+      cmd: bash ${env.WORKSPACE}/${tmp-bump-version-path} ${env.WORKSPACE}
+
+  set-oss-idun-cicd-cli-env-variables:
+    - task: set-path-to-oss-idun-cicd-cli-docker-file
+      cmd: echo ${oss-idun-cicd-cli-docker-file-path} > .bob/var.docker-file-path
+    - task: set-path-to-oss-idun-cicd-cli-version-file
+      cmd: echo ${oss-idun-cicd-cli-version-file-path} > .bob/var.version-file-path
+    - task: set-oss-idun-cicd-cli-image-name
+      cmd: echo ${oss-idun-cicd-cli-image-name} > .bob/var.image-name
+    - task: set-armdocker-repo-new
+      cmd: echo ${armdocker-repo-new-path} > .bob/var.armdocker-repo-new
+
+  set-python-precode-env-variables:
+    - task: set-path-to-python-precode-docker-file
+      cmd: echo ${python-precode-docker-file-path} > .bob/var.docker-file-path
+    - task: set-path-to-python-precode-version-file
+      cmd: echo ${python-precode-version-file-path} > .bob/var.version-file-path
+    - task: set-python-precode-image-name
+      cmd: echo ${python-precode-image-name} > .bob/var.image-name
+
+  build-docker-image:
+    - task: build-image
+      cmd: docker build -f ${var.docker-file-path} -t armdocker.rnd.ericsson.se/proj_openstack_tooling/${var.image-name}:${env.IMAGE_VERSION} --pull ${env.WORKSPACE}
+    - task: get-docker-image-id
+      cmd: docker images armdocker.rnd.ericsson.se/proj_openstack_tooling/${var.image-name} -q > .bob/var.docker-image-id
+    - task: tag-image
+      cmd: docker tag ${var.docker-image-id} armdocker.rnd.ericsson.se/proj_openstack_tooling/${var.image-name}:latest
+
+  build-docker-image-new-repo:
+    - task: build-image
+      cmd: docker build -f ${var.docker-file-path} -t ${var.armdocker-repo-new}${var.image-name}:${env.IMAGE_VERSION} --pull ${env.WORKSPACE}
+    - task: get-docker-image-id
+      cmd: docker images ${var.armdocker-repo-new}${var.image-name} -q > .bob/var.docker-image-id
+    - task: tag-image
+      cmd: docker tag ${var.docker-image-id} ${var.armdocker-repo-new}${var.image-name}:latest
+
+  publish-docker-image:
+    - task: push-docker-image
+      cmd: docker push armdocker.rnd.ericsson.se/proj_openstack_tooling/${var.image-name}:${env.IMAGE_VERSION}
+    - task: push-latest-docker-image
+      cmd: docker push armdocker.rnd.ericsson.se/proj_openstack_tooling/${var.image-name}:latest
+
+  publish-docker-image-new-repo:
+    - task: push-docker-image
+      cmd: docker push ${var.armdocker-repo-new}${var.image-name}:${env.IMAGE_VERSION}
+    - task: push-latest-docker-image
+      cmd: docker push ${var.armdocker-repo-new}${var.image-name}:latest
+
+  add-changes-to-version-file:
+    - task: git-add
+      cmd: git add ${var.version-file-path}
+
+  push-changes-to-version-files:
+    - task: git-commit
+      cmd: git commit -m "Version ${env.IMAGE_VERSION}"
+    - task: git-tag
+      cmd: git tag -a "${env.IMAGE_VERSION}" -m "version ${env.IMAGE_VERSION}"
+    - task: git-rebase
+      cmd: git rebase HEAD gcn/master
+    - task: git-push-master-branch
+      cmd: git push ${env.GERRIT_CENTRAL}/OSS/com.ericsson.oss.cicd/oss-idun-release-cicd HEAD:master
+    - task: git-push-tags
+      cmd: git push --tags ${env.GERRIT_CENTRAL}/OSS/com.ericsson.oss.cicd/oss-idun-release-cicd

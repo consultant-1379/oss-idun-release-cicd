@@ -1,0 +1,14 @@
+FROM armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/python:3.8-slim-buster
+
+WORKDIR /usr/src/app
+
+COPY . /usr/src/app
+
+RUN pip install pyyaml
+RUN pip install pytest
+
+RUN pytest cicd_files/external/scripts/version_step/tests
+
+ENTRYPOINT ["python", "cicd_files/external/scripts/version_step/version_step.py"]
+
+CMD ["PATCH", "helmfile"]

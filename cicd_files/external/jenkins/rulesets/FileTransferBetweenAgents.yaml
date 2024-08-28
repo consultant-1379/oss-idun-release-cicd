@@ -1,0 +1,49 @@
+modelVersion: 2.0
+
+description: 'IDUN CaaP Release: Ruleset for job to transfer files between Jenkins agents'
+
+properties:
+  - package-dir: /tmp
+
+env:
+  - PWD
+  - INT_CHART_VERSION
+  - PATH_TO_CERTIFICATES_FILES
+  - PATH_TO_SITE_VALUES_FILE
+  - KEY_FILE
+  - DESTINATION_SERVER_HOSTNAME_OR_IP
+  - SCP_USER
+  - DESTINATION_SERVER_PACKAGE_LOCATION
+
+rules:
+  git-clean:
+    - task: git-clean
+      cmd: docker run --rm -v ${env.PWD}:/git/ armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/alpine/git:v2.32.0 clean -xdff
+
+  copy-certificate-files:
+    - task: copy-certificate-files
+      cmd:
+        - mkdir certificates
+        - cp -r ${env.PWD}/${env.PATH_TO_CERTIFICATES_FILES}/* ${env.PWD}/certificates
+
+  fetch-site-values:
+    - task: fetch-site-values
+      cmd: cp ${env.PWD}/${env.PATH_TO_SITE_VALUES_FILE} ${env.PWD}/site_values_${env.INT_CHART_VERSION}.yaml
+
+  create-archive-to-transfer:
+    - task: create-archive-to-transfer
+      cmd:
+        - mkdir package
+        - cp -ar certificates package
+        - cp site_values_${env.INT_CHART_VERSION}.yaml package
+        - tar -czvf package.tar.gz package
+
+  transfer-archive-to-vm-privatekey:
+    - task: transfer-archive-to-vm-privatekey
+      cmd:
+        - scp -i ${env.KEY_FILE} package.tar.gz ${env.SCP_USER}@${env.DESTINATION_SERVER_HOSTNAME_OR_IP}:${package-dir}
+
+  transfer-archive-to-vm-userpass:
+    - task: transfer-archive-to-vm-userpass
+      cmd:
+        - scp package.tar.gz ${env.SCP_USER}@${env.DESTINATION_SERVER_HOSTNAME_OR_IP}:${env.DESTINATION_SERVER_PACKAGE_LOCATION}

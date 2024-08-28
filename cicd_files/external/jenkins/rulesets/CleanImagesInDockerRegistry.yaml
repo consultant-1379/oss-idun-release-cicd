@@ -1,0 +1,45 @@
+modelVersion: 2.0
+
+description: "OSS IDUN Release CICD: Clean Registry In Docker Registry"
+
+docker-images:
+  - data-store-client: armdocker.rnd.ericsson.se/proj-eric-oss-dev-test/data-store-client:latest
+
+env:
+  - BUCKET_NAME
+  - DATAFILE_NAME
+  - BUCKET_OUTPUT_DIR
+  - BUCKET_OUTPUT_FILENAME
+  - FUNCTIONAL_USER_USERNAME
+  - FUNCTIONAL_USER_PASSWORD
+  - DATAFILE_TYPE
+  - PWD
+
+var:
+  - bucket-name
+  - datafile-name
+  - bucket-output-directory
+  - bucket-output-filename
+
+rules:
+  ost_bucket:
+    - task: set-bucket-name
+      cmd: echo ${env.BUCKET_NAME} > .bob/var.bucket-name
+    - task: set-datafile-name
+      cmd: echo ${env.DATAFILE_NAME} > .bob/var.datafile-name
+    - task: set-output-dir
+      cmd: echo ${env.BUCKET_OUTPUT_DIR} > .bob/var.bucket-output-directory
+    - task: set-output-file-name
+      cmd: echo ${env.BUCKET_OUTPUT_FILENAME} > .bob/var.bucket-output-filename
+    - task: download-all-files-in-ost-bucket
+      docker-image: data-store-client
+      docker-flags:
+        - --volume ${env.PWD}/${var.bucket-output-directory}:/usr/src/app/out
+        - --workdir /usr/src/app/
+      cmd: download-all-files-in-ost-bucket --bucket_name ${var.bucket-name} --auth_user ${env.FUNCTIONAL_USER_USERNAME} --auth_pass ${env.FUNCTIONAL_USER_PASSWORD} --generate_artifact_properties
+    - task: download-files-by-name-in-ost-bucket
+      docker-image: data-store-client
+      docker-flags:
+        - --volume ${env.PWD}/${var.bucket-output-directory}:/usr/src/app/out
+        - --workdir /usr/src/app
+      cmd: download-ost-file-by-name --bucket_name ${var.bucket-name} --datafile_name ${var.datafile-name} --datafile_type ${env.DATAFILE_TYPE} --auth_user ${env.FUNCTIONAL_USER_USERNAME} --auth_pass ${env.FUNCTIONAL_USER_PASSWORD} -gap

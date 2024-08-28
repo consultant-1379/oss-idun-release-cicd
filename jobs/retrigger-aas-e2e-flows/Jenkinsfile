@@ -1,0 +1,32 @@
+pipeline {
+  agent {
+    label SLAVE
+  }
+  stages {
+    stage('Prepare Working Directory') {
+      steps {
+        withCredentials([file(credentialsId: 'ossadm_docker_config', variable: 'DOCKERCONFIG')]) {
+          sh "install -m 600 ${DOCKERCONFIG} ${HOME}/.docker/config.json"
+        }
+      }
+    }
+    stage('Retrigger failed AAS E2E Flows') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'tb_spinnaker_creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+          echo 'Retrigger failed AAS E2E Flows...'
+          sh '''
+          docker run --rm --name idun_cicd_cli-"\${BUILD_TAG}" \
+          armdocker.rnd.ericsson.se/proj-eric-oss-dev-test/oss-idun-cicd-cli:latest \
+          retrigger-aas-e2e-flows --verbose -u \"${USER}\" -p \"${PASS}\" || exit 1
+          '''
+        }
+      }
+    }
+  }
+  post {
+    always {
+      sh 'docker kill idun_cicd_cli-"${BUILD_TAG}" || true'
+      sh 'docker rmi armdocker.rnd.ericsson.se/proj-eric-oss-dev-test/oss-idun-cicd-cli:latest || true'
+    }
+  }
+}

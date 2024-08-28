@@ -1,0 +1,46 @@
+modelVersion: 2.0
+
+description: 'EIC Auto Apps: Ruleset for job to fetch and upload ZIP'
+
+properties:
+  - artifactory-subpath: artifactory
+
+env:
+  - PWD
+  - CHART_NAME
+  - CHART_VERSION
+  - ZIP_DOWNLOAD_REPO
+  - ZIP_UPLOAD_REPO
+  - ZIP_STORAGE_INSTANCE
+  - FUNCTIONAL_USER_USERNAME
+  - FUNCTIONAL_USER_PASSWORD
+
+rules:
+  git-clean:
+    - task: git-clean
+      cmd: docker run --rm --user $(id -u):$(id -g) -v ${env.PWD}:/git/ armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/alpine/git:v2.32.0 clean -xdff || docker run --rm -v ${env.PWD}:/git/ armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/alpine/git:v2.32.0 clean -xdff
+
+  download-zip:
+    - task: download-zip
+      cmd: |
+        mkdir -p ${env.PWD}/ci/zip/input_folder
+        if curl -X GET -u ${env.FUNCTIONAL_USER_USERNAME}:${env.FUNCTIONAL_USER_PASSWORD} \
+        -L -o ${env.PWD}/ci/zip/input_folder/downloaded_file.zip \
+        "${env.ZIP_STORAGE_INSTANCE}/${artifactory-subpath}/${env.ZIP_DOWNLOAD_REPO}/${env.CHART_NAME}/${env.CHART_NAME}-${env.CHART_VERSION}.zip"; then
+          echo 'Download was successful.'
+        else
+          echo 'Download failed.'
+          exit 1
+        fi
+
+  upload-zip:
+      - task: upload-zip
+        cmd: |
+          if curl -X PUT -u ${env.FUNCTIONAL_USER_USERNAME}:${env.FUNCTIONAL_USER_PASSWORD} \
+          -T ${env.PWD}/ci/zip/input_folder/downloaded_file.zip \
+          "${env.ZIP_STORAGE_INSTANCE}/${artifactory-subpath}/${env.ZIP_UPLOAD_REPO}/${env.CHART_NAME}/${env.CHART_NAME}-${env.CHART_VERSION}.zip"; then
+            echo 'Upload was successful.'
+          else
+            echo 'Upload failed.'
+            exit 1
+          fi

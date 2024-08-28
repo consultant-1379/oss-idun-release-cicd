@@ -1,0 +1,114 @@
+modelVersion: 2.0
+
+description: 'EIAP Auto Apps: Ruleset for job to prepare, build, and upload CSAR'
+
+docker-images:
+  - adp-release-auto: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/bob-adp-release-auto:latest
+  - csar-builder: ${csar-builder-image-full-name}
+
+properties:
+  - image-registry: armdocker.rnd.ericsson.se
+  - csar-builder-image-repo-path: proj-eric-oss-dev-test/releases
+  - csar-builder-image-name: eric-oss-app-package-tool
+  - csar-builder-image-tag: 2.36.15-1
+  - csar-builder-image-full-name: ${image-registry}/${csar-builder-image-repo-path}/${csar-builder-image-name}:${csar-builder-image-tag}
+  - artifactory-subpath: artifactory
+
+env:
+  - PWD
+  - HOME
+  - CHART_NAME
+  - CHART_VERSION
+  - CHART_REPO
+  - SSH_REPO_URL
+  - INPUT_FOLDER_LOCATION
+  - ADDITIONAL_VALUES_LOCATION
+  - CSAR_STORAGE_INSTANCE
+  - CSAR_REPO_SUBPATH
+  - CSAR_STORAGE_REPO
+  - FUNCTIONAL_USER_USERNAME
+  - FUNCTIONAL_USER_PASSWORD
+
+rules:
+  conditions:
+    - task: is_additional_values_location_set
+      cmd: test "${env.ADDITIONAL_VALUES_LOCATION}" != ""
+
+  git-clean:
+    - task: git-clean
+      cmd: docker run --rm --user $(id -u):$(id -g) -v ${env.PWD}:/git/ armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/alpine/git:v2.32.0 clean -xdff || docker run --rm -v ${env.PWD}:/git/ armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/alpine/git:v2.32.0 clean -xdff
+
+  clone-repo:
+    - task: clone-gerrit-repo
+      cmd: git clone ${env.SSH_REPO_URL}
+
+  csar-prep:
+    - task: create-directory
+      cmd: mkdir -p ci/csar
+    - task: copy-input-folder
+      cmd: cp -r **/${env.INPUT_FOLDER_LOCATION}/** ci/csar
+    - task: copy-additional-values
+      condition: conditions:is_additional_values_location_set
+      cmd: cp -r **/${env.ADDITIONAL_VALUES_LOCATION}** ci/csar_additional_values
+    - task: update-chart-version-in-appdescriptor-template
+      cmd: sed -i 's/VERSION/${env.CHART_VERSION}/g' ci/csar/Definitions/AppDescriptor.yaml
+    - task: update-chart-version-in-asd-template
+      cmd: sed -i 's/VERSION/${env.CHART_VERSION}/g' ci/csar/OtherDefinitions/ASD/${env.CHART_NAME}ASD.yaml
+
+  fetch-chart:
+    - task: helm-pull
+      docker-image: adp-release-auto
+      cmd:
+        bash -c 'helm repo add oss ${env.CHART_REPO} --username ${env.FUNCTIONAL_USER_USERNAME} --password "${env.FUNCTIONAL_USER_PASSWORD}";
+        helm fetch --version ${env.CHART_VERSION} oss/${env.CHART_NAME}'
+
+  move-chart:
+    - task: move-chart
+      cmd: mv ${env.CHART_NAME}-*.tgz ci/csar/OtherDefinitions/ASD/
+
+  create-output-folder:
+    - task: create-output-folder
+      cmd: bash -c '
+        if [[ -d "output_folder" ]]; then
+          rm -rf output_folder;
+        fi;
+        mkdir -p output_folder;'
+
+  set-csar-dir-permissions:
+    - task: set-csar-dir-permissions
+      cmd: chmod -R 777 ${env.PWD}/ci/csar
+
+  build-csar:
+    - task: build-csar
+      condition: NOT conditions:is_additional_values_location_set
+      docker-image: csar-builder
+      docker-flags:
+        - '--rm'
+        - '--user 0:0'
+        - '--volume ${env.HOME}/.docker:/root/.docker'
+        - '--volume ${env.PWD}/output_folder:/output_folder'
+        - '--volume ${env.PWD}/ci/csar:/target'
+        - '--volume /var/run/docker.sock:/var/run/docker.sock'
+        - '--workdir /target'
+      cmd: generate --helm3 --name ${env.CHART_NAME}-${env.CHART_VERSION} --tosca /target/Metadata/Tosca.meta --output output_folder
+    - task: build-csar-with-additional-values
+      condition: conditions:is_additional_values_location_set
+      docker-image: csar-builder
+      docker-flags:
+        - '--rm'
+        - '--user 0:0'
+        - '--volume ${env.HOME}/.docker:/root/.docker'
+        - '--volume ${env.PWD}/output_folder:/output_folder'
+        - '--volume ${env.PWD}/ci/csar:/target'
+        - '--volume ${env.PWD}/ci/csar_additional_values:/additional_values'
+        - '--volume /var/run/docker.sock:/var/run/docker.sock'
+        - '--workdir /target'
+      cmd: generate --helm3 --name ${env.CHART_NAME}-${env.CHART_VERSION} --values /additional_values/site-values.yaml --tosca /target/Metadata/Tosca.meta --output output_folder
+
+  confirm-csar:
+    - task: confirm-csar
+      cmd: /bin/bash -c "if [ ! -f ${env.PWD}/ci/csar/output_folder/${env.CHART_NAME}-${env.CHART_VERSION}.csar ]; then echo 'Error, no CSAR file found'; exit 1; fi"
+
+  upload-csar:
+    - task: upload-csar
+      cmd: curl -X PUT -u ${env.FUNCTIONAL_USER_USERNAME}:${env.FUNCTIONAL_USER_PASSWORD} -T ${env.PWD}/ci/csar/output_folder/${env.CHART_NAME}-${env.CHART_VERSION}.csar ${env.CSAR_STORAGE_INSTANCE}/${artifactory-subpath}/${env.CSAR_STORAGE_REPO}/${env.CSAR_REPO_SUBPATH}/${env.CHART_NAME}/${env.CHART_VERSION}/${env.CHART_NAME}-${env.CHART_VERSION}.csar

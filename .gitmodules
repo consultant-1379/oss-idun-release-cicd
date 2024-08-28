@@ -1,0 +1,12 @@
+[submodule "bob"]
+	path = bob
+	url = ssh://gerrit-gamma-read.seli.gic.ericsson.se:29418/adp-cicd/bob
+	branch = master
+[submodule "oss-common-ci"]
+	path = oss-common-ci
+	url = ssh://gerrit-gamma-read.seli.gic.ericsson.se:29418/OSS/com.ericsson.oss.orchestration.common/oss-common-ci
+	branch = master
+[submodule "oss-integration-ci"]
+	path = oss-integration-ci
+	url = ssh://gerrit-gamma-read.seli.gic.ericsson.se:29418/OSS/com.ericsson.oss.aeonic/oss-integration-ci
+	branch = master
